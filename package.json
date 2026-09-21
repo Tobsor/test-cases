@@ -1,0 +1,18 @@
+{
+  "name": "playwright-script-tests",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Minimal Playwright script test runner using the host system browser.",
+  "scripts": {
+    "test": "playwright test",
+    "test:headed": "playwright test --headed",
+    "test:trace": "playwright test --trace on",
+    "test:trace:open": "playwright show-trace",
+    "test:ui": "playwright test --ui",
+    "test:suite": "playwright test",
+    "test:report": "playwright show-report playwright-report"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.54.1"
+  }
+}
