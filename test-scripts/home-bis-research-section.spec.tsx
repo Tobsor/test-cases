@@ -44,7 +44,7 @@ test.describe(`Home BIS research section`, () => {
       await bisResearch.getByRole("link", { name: "View all" }).click();
       const popup = await popupPromise;
       await popup.waitForLoadState("domcontentloaded");
-      await expect(popup).toHaveURL(/https:\/\/www\.bis\.org\/forum\/research\.htm/);
+      await expect(popup).toHaveURL(/https:\/\/www\.bis\.org\/publications\/research/);
       await popup.close();
     });
   });

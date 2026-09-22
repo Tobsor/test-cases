@@ -32,31 +32,32 @@ test.describe(`Publication Table Share`, () => {
       await expect(page).toHaveURL(/time_period=2020-Q1/);
       await expect(page).toHaveURL(/dimensions=L_MEASURE%3AF/);
       await expect(page).toHaveURL(/view=seriesKey/);
-      await expect(page.locator("main")).toContainText("FX and break adjusted change (BIS calculated)");
-      await expect(page.locator("main")).toContainText("View:Series Key");
+      await expect(page.getByRole("main")).toContainText("FX and break adjusted change (BIS calculated)");
+      await expect(page.getByRole("main")).toContainText("View:Series Key");
     });
 
     await it.step(`3. Open the Share dialog`, async () => {
       await page.getByRole("button", { name: "Share" }).click();
       await expect(page.getByRole("dialog", { name: "Share" })).toBeAttached();
-      await expect(page.getByRole("textbox", { name: "URL" })).toBeVisible();
+      await expect(page.getByRole("dialog", { name: "Share" }).getByRole("textbox", { name: "URL" })).toBeVisible();
     });
 
     await it.step(`4. Copy/share controls expose a reusable URL`, async () => {
-      const shareUrl = page.getByRole("textbox", { name: "URL" });
+      const shareDialog = page.getByRole("dialog", { name: "Share" });
+      const shareUrl = shareDialog.getByRole("textbox", { name: "URL" });
       await expect(shareUrl).toHaveValue(/BIS,LBS_A1,1\.0/);
       await expect(shareUrl).toHaveValue(/time_period=2020-Q1/);
       await expect(shareUrl).toHaveValue(/dimensions=L_MEASURE%3AF/);
       await expect(shareUrl).toHaveValue(/view=seriesKey/);
-      await page.getByRole("button", { name: "Copy to clipboard" }).click();
+      await shareDialog.getByRole("button", { name: "Copy to clipboard" }).click();
       const sharedUrlValue = await shareUrl.inputValue();
       const sharedPage = await page.context().newPage();
       await sharedPage.goto(sharedUrlValue);
       await sharedPage.waitForLoadState("domcontentloaded");
       await expect(sharedPage).toHaveURL(/BIS,LBS_A1,1\.0/);
       await expect(sharedPage.getByRole("combobox", { name: "publication table date" })).toHaveValue("2020-Q1");
-      await expect(sharedPage.locator("main")).toContainText("FX and break adjusted change (BIS calculated)");
-      await expect(sharedPage.locator("main")).toContainText("View:Series Key");
+      await expect(sharedPage.getByRole("main")).toContainText("FX and break adjusted change (BIS calculated)");
+      await expect(sharedPage.getByRole("main")).toContainText("View:Series Key");
       await sharedPage.close();
     });
   });

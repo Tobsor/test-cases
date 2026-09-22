@@ -43,14 +43,15 @@ test.describe(`Navigating to inexisting publication table`, () => {
       await expect(page.getByRole("grid").getByRole("link", { name: /International debt securities amounts outstanding/i })).toBeVisible();
     });
 
-    await it.step(`5. Linked IDS table loads as an empty table with headers and cleared filter`, async () => {
+    await it.step(`5. Linked IDS table loads with headers and the Issuer residence filter fallback`, async () => {
       await page.getByRole("grid").getByRole("link", { name: /International debt securities amounts outstanding/i }).click();
       await page.waitForLoadState("domcontentloaded");
       await expect(page).toHaveURL(/BIS,SEC_C5_IDS,1\.0.*ISSUER_RES:U2/);
       await expect(page.getByRole("grid")).toBeVisible();
-      await expect(page.locator("main")).toContainText("Issuer residence");
       await expect(page.locator("main")).toContainText("Residents (S1)");
-      await expect(page.getByRole("combobox", { name: /Issuer residence|Reference area/ }).first()).toHaveValue("");
+      const referenceAreaInput = page.getByRole("combobox", { name: /Issuer residence|Reference area/ }).first();
+      const referenceAreaFilter = page.locator(".select").filter({ has: referenceAreaInput });
+      await expect(referenceAreaFilter.getByText("Issuer residence", { exact: true })).toBeVisible();
       await expect(page.getByRole("grid").getByRole("link")).toHaveCount(0);
     });
   });

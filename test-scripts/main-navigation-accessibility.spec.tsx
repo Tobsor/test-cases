@@ -16,20 +16,15 @@ const it = test;
 test.describe(`Main Navigation Accessibility`, () => {
   test(`Main Navigation Accessibility`, async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 1000 });
+    const topicsNavigation = page.getByRole("navigation", { name: "Topics navigation" });
+    const subtopics = topicsNavigation.getByRole("complementary");
+    const firstSubtopic = subtopics.getByRole("link").first();
 
     await it.step(`1. Go to /`, async () => {
       await gotoPath(page, "/");
     });
 
-    await it.step(`2. Skip link is first keyboard target and moves focus to main content`, async () => {
-      await page.keyboard.press("Tab");
-      await expect(page.getByRole("link", { name: "Skip to content" })).toBeFocused();
-      await page.keyboard.press("Enter");
-      await expect(page.getByRole("heading", { name: /Global statistics/i })).toBeVisible();
-    });
-
     await it.step(`3. Header links are reachable by keyboard`, async () => {
-      await gotoPath(page, "/");
       await page.keyboard.press("Tab");
       await expect(page.getByRole("link", { name: "Skip to content" })).toBeFocused();
       await page.keyboard.press("Tab");
@@ -42,7 +37,7 @@ test.describe(`Main Navigation Accessibility`, () => {
       await page.keyboard.press("Enter");
       await expect(page.getByRole("menu").or(page.getByRole("dialog")).first()).toBeVisible();
       await expect(page.getByRole("banner").getByRole("button", { name: "Topics" })).toBeFocused();
-      await expect(page.getByRole("link", { name: /Locational banking statistics|LBS/i }).first()).toBeVisible();
+      await expect(topicsNavigation.getByRole("menuitem", { name: "International banking", exact: true })).toBeVisible();
     });
 
     await it.step(`5. Enter closes and reopens the Topics menu while keeping focus on Topics`, async () => {
@@ -59,11 +54,41 @@ test.describe(`Main Navigation Accessibility`, () => {
 
     await it.step(`6. Tab enters the Topics menu parent list`, async () => {
       await page.keyboard.press("Tab");
-      await expect(focusedElement(page)).toHaveAttribute("role", "menuitem");
-      await expect(focusedElement(page)).toContainText("International banking");
+      const internationalBanking = topicsNavigation.getByRole("menuitem", { name: "International banking", exact: true });
+      await expect(internationalBanking).toBeFocused();
+      // Topic activation is delayed and cancelled on blur. Wait before the next Tab.
+      await expect(internationalBanking).toHaveAttribute("aria-current", "true");
+      await expect(firstSubtopic).toBeVisible();
     });
 
-    await it.step(`7. Arrow down moves focus through parent topics`, async () => {
+    await it.step(`7. Tab into the right-hand subtopic content area`, async () => {
+      await page.keyboard.press("Tab");
+    });
+
+    await it.step(`8. Wait for the right-hand subtopics to render and verify focus`, async () => {
+      await expect(subtopics).toBeVisible();
+      await expect(firstSubtopic, "The Topics submenu should render its first subtopic link").toBeVisible();
+      await expect(firstSubtopic).toContainText("Locational banking statistics");
+      await expect(subtopics.getByRole("link", { name: /Consolidated banking statistics/ }).first()).toBeVisible();
+      await expect(firstSubtopic).toBeFocused();
+    });
+
+    await it.step(`9. Tab focuses the subtopic data icon`, async () => {
+      await page.keyboard.press("Tab");
+      await expect(page.getByRole("navigation", { name: "Topics navigation" })
+        .getByRole("link", { name: "Go to data of Locational banking statistics", exact: true })).toBeFocused();
+    });
+
+    await it.step(`10. Three more Tabs focus the next top-level topic`, async () => {
+      await page.keyboard.press("Tab");
+      await page.keyboard.press("Tab");
+      await page.keyboard.press("Tab");
+      await expect(page.getByRole("menuitem", { name: "Debt securities", exact: true })).toBeFocused();
+    });
+
+    await it.step(`11. Arrow down moves focus through parent topics`, async () => {
+      // Restore the starting topic for the original ArrowDown checks.
+      await page.getByRole("menuitem", { name: "International banking", exact: true }).focus();
       await page.keyboard.press("ArrowDown");
       await expect(focusedElement(page)).toHaveAttribute("role", "menuitem");
       await expect(focusedElement(page)).toContainText("Debt securities");

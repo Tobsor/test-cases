@@ -72,9 +72,12 @@ test.describe(`Exploration Country search`, () => {
       await expect(page).toHaveURL(/\/search\?q=Germany$/);
     });
 
-    await it.step(`Expected 2. The items should relate to the term "Germany"`, async () => {
+    await it.step(`Expected 2. The first five result titles should contain "Germany"`, async () => {
       await expect(page.getByText(/time series found/i)).toBeVisible();
-      await expect(page.getByText(/Germany/i).first()).toBeVisible();
+      const results = page.getByRole("main").getByRole("article");
+      for (let index = 0; index < 5; index += 1) {
+        await expect(results.nth(index).getByRole("link", { name: /\bGermany\b/i })).toBeVisible();
+      }
     });
 
     await it.step(`Expected 3. The search bar on top of the page should have the value "Germany" set`, async () => {

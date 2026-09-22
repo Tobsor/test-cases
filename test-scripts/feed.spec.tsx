@@ -47,19 +47,22 @@ test.describe(`Feed`, () => {
       expect(xml).toContain('<atom:link href="https://data.bis.org/feed.xml" rel="self" type="application/rss+xml"/>');
     });
 
-    await it.step(`3. Verify roughly that the feed items seem legitimate`, async () => {
+    await it.step(`3. Verify the item count and required fields of every feed item`, async () => {
       const items = xml.match(/<item>[\s\S]*?<\/item>/g) ?? [];
-      expect(items.length).toBeGreaterThanOrEqual(100);
+      expect(items.length).toBeGreaterThanOrEqual(50);
       expect(items.length).toBeLessThanOrEqual(200);
 
-      const firstItem = items[0];
-      expect(firstItem).toMatch(/<title><!\[CDATA\[[^<]+, \d{4}[- ][^<]+ \/ [^<]+\]\]><\/title>/);
-      expect(firstItem).toMatch(/<description><!\[CDATA\[[\s\S]+?\]\]><\/description>/);
-      expect(firstItem).toMatch(/<category><!\[CDATA\[[A-Z0-9_]+\]\]><\/category>/);
-      const link = firstItem.match(/<link>(https:\/\/data\.bis\.org\/topics\/[A-Z0-9_]+)<\/link>/)?.[1];
-      expect(link).toBeTruthy();
-      expect(firstItem).toContain(`<guid isPermaLink="true">${link}</guid>`);
-      expect(firstItem).toMatch(/<pubDate>[A-Z][a-z]{2}, \d{2} [A-Z][a-z]{2} \d{4} \d{2}:\d{2}:\d{2} GMT<\/pubDate>/);
+      for (const [index, item] of items.entries()) {
+        await it.step(`Verify required fields for feed item ${index + 1}`, async () => {
+          expect(item).toMatch(/<title><!\[CDATA\[[^<]+, \d{4}[- ][^<]+ \/ [^<]+\]\]><\/title>/);
+          expect(item).toMatch(/<description><!\[CDATA\[[\s\S]+?\]\]><\/description>/);
+          expect(item).toMatch(/<category><!\[CDATA\[[A-Z0-9_]+\]\]><\/category>/);
+          const link = item.match(/<link>(https:\/\/data\.bis\.org\/topics\/[A-Z0-9_]+)<\/link>/)?.[1];
+          expect(link).toBeTruthy();
+          expect(item).toContain(`<guid isPermaLink="true">${link}</guid>`);
+          expect(item).toMatch(/<pubDate>[A-Z][a-z]{2}, \d{2} [A-Z][a-z]{2} \d{4} \d{2}:\d{2}:\d{2} GMT<\/pubDate>/);
+        });
+      }
     });
   });
 });

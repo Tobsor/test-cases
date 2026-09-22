@@ -86,12 +86,17 @@ test.describe(`Exploration Topic Filter Search`, () => {
     });
 
     await it.step(`6. Check the checkbox next to "Non-financial corporations" by clicking it`, async () => {
-      const checkbox = page.getByRole("dialog", { name: "Explore" }).getByRole("checkbox", {
+      const dialog = page.getByRole("dialog", { name: "Explore" });
+      const option = dialog.getByRole("option", { name: /^Non-financial corporations\[N\]/ });
+      const countChip = option.locator('[aria-label="Chip"]');
+      await expect(countChip).toHaveText(/^\d+$/);
+      const expectedResultCount = Number(await countChip.innerText());
+      const checkbox = option.getByRole("checkbox", {
         name: "Non-financial corporations[N]",
       });
       await checkbox.click();
       await expect(checkbox).toBeChecked();
-      await expect(page.getByRole("dialog", { name: "Explore" }).getByRole("link", { name: /Show \d+ results/ })).toBeVisible();
+      await expect(dialog.getByRole("link", { name: `Show ${expectedResultCount} results`, exact: true })).toBeVisible();
     });
 
     await it.step(`7. Click on Reset (next to "Show x results")`, async () => {
@@ -108,8 +113,13 @@ test.describe(`Exploration Topic Filter Search`, () => {
 
     await it.step(`9. Click on Select all`, async () => {
       const dialog = page.getByRole("dialog", { name: "Explore" });
+      const borrowerOptions = dialog.getByRole("listbox").getByRole("option");
+      await expect(borrowerOptions).toHaveCount(3);
+      const expectedSelectedCount = await borrowerOptions.count();
       await dialog.getByRole("button", { name: "Select all" }).click();
       await expectAllBorrowerOptionsChecked(dialog, true);
+      await expect(dialog.getByRole("menuitem", { name: /^Borrowers(?:\s|$)/ })
+        .getByText(String(expectedSelectedCount), { exact: true })).toBeVisible();
       await expect(dialog.getByRole("link", { name: /Show \d+ results/ })).toBeVisible();
     });
 
@@ -134,8 +144,17 @@ test.describe(`Exploration Topic Filter Search`, () => {
       await page.getByRole("dialog", { name: "Explore" }).locator('a[href*="DSR_BORROWERS%3DN"]').click();
       await page.waitForLoadState("domcontentloaded");
       await expect(page).toHaveURL(/\/search\?filter=_CATEGORY%3DDSR%255EDSR_BORROWERS%3DN/);
-      await expect(page.locator("main")).toContainText("Debt service ratios");
-      await expect(page.locator("main")).toContainText("Non-financial corporations");
+      const filters = page.getByRole("region", { name: "Filters", exact: true });
+      await expect(filters.getByRole("button", { name: /^Topic filter / })).toHaveText("Topic: Debt service ratios [DSR]");
+      await expect(filters.getByRole("button", { name: "Clear Topic filter", exact: true })).toBeVisible();
+      await expect(filters.getByRole("button", { name: /^Borrowers filter / })).toHaveText("Borrowers: Non-financial corporations [N]");
+      await expect(filters.getByRole("button", { name: "Clear Borrowers filter", exact: true })).toBeVisible();
+
+      const results = page.getByRole("region", { name: "Time series list", exact: true }).getByRole("article");
+      for (let index = 0; index < 5; index += 1) {
+        // Individual series use the singular "Debt service ratio" in their titles.
+        await expect(results.nth(index).getByRole("link", { name: /\bDebt service ratios?\b/i })).toBeVisible();
+      }
     });
   });
 });
