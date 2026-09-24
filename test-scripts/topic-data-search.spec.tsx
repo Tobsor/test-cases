@@ -1,55 +1,117 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 
-const DSS_SERIES_KEY = "Q.N.MT.XW.S11.S1.N.L.LE.F3VRC.T._Z.EUR._T.M.V.N._T";
+const DATA_PATH = "/topics/DSS/data";
 
-async function gotoDssData(page: Page): Promise<void> {
-  await page.goto("/topics/DSS/data");
-  await page.waitForLoadState("domcontentloaded");
-  await expect(page.getByRole("heading", { level: 1, name: "Debt securities statistics" })).toBeVisible();
+function searchInput(page: Page): Locator {
+  return page.getByRole("main").getByRole("combobox", { name: "Search for time series" });
 }
 
-function main(page: Page) {
-  return page.locator("main");
+function resultCount(page: Page): Locator {
+  return page.getByRole("main").getByText(/^[\d,.]+ time series found$/).first();
 }
 
-async function searchTopicData(page: Page, query: string): Promise<void> {
-  const input = main(page).getByRole("combobox", { name: "Search for time series" });
-  await input.fill("");
-  await input.fill(query);
-  await input.press("Enter");
-  await expect(page).toHaveURL((url) => url.searchParams.get("q") === query);
+function countFrom(text: string): number {
+  return Number(text.replace(/[^0-9]/g, ""));
+}
+
+async function expectVisibleResultsFrom(page: Page, referenceArea: string): Promise<void> {
+  const cards = page.getByRole("main").getByRole("article");
+  await expect(cards.first()).toContainText(referenceArea);
+  const cardTexts = await cards.allInnerTexts();
+  expect(cardTexts.length).toBeGreaterThan(0);
+  expect(
+    cardTexts.every((text) => text.includes(referenceArea)),
+    `Every visible result should relate to ${referenceArea}`,
+  ).toBe(true);
 }
 
 test.describe("Topic Data Search", () => {
-  test("filters topic data by series key and country text", async ({ page }) => {
-    await gotoDssData(page);
-    await expect(main(page).getByText(/time series found/i).first()).toBeVisible();
+  test("filters topic data by series key and reference-area suggestion", async ({ page }) => {
+    let fullResultCount = 0;
+    let switzerlandResultCount = 0;
+    let identifiedSeriesKey = "";
+    let identifiedSeriesTitle = "";
 
-    await searchTopicData(page, DSS_SERIES_KEY);
-    await expect(main(page).getByText("1 time series found")).toBeVisible();
-    await expect(main(page).getByText(DSS_SERIES_KEY)).toBeVisible();
-    await expect(main(page).getByRole("article").first()).toContainText(/Malta/i);
+    await test.step("1. Navigate to /topics/DSS/data", async () => {
+      await page.goto(DATA_PATH);
+      await expect(page.getByRole("heading", { level: 1, name: "Debt securities statistics" })).toBeVisible();
+      await expect(resultCount(page)).toBeVisible();
+      fullResultCount = countFrom(await resultCount(page).innerText());
+      expect(fullResultCount).toBeGreaterThan(0);
+    });
 
-    await main(page).getByRole("button", { name: /clear search terms/i }).click();
-    await expect(page).toHaveURL((url) => url.pathname === "/topics/DSS/data" && !url.searchParams.has("q"));
-    await expect(main(page).getByRole("combobox", { name: "Search for time series" })).toHaveValue("");
-    await expect(main(page).getByText(/time series found/i).first()).not.toHaveText("1 time series found");
+    await test.step("2. Identify an item in the time-series list and note its series key", async () => {
+      const item = page.getByRole("main").getByRole("article").first();
+      await expect(item).toBeVisible();
+      const lines = (await item.innerText()).split("\n").map((line) => line.trim()).filter(Boolean);
+      const seriesKeyLabel = lines.indexOf("Series key");
+      expect(seriesKeyLabel).toBeGreaterThanOrEqual(0);
+      identifiedSeriesKey = lines[seriesKeyLabel + 1] ?? "";
+      identifiedSeriesTitle = lines[seriesKeyLabel + 2] ?? "";
+      expect(identifiedSeriesKey).toMatch(/^[A-Z]\./);
+      expect(identifiedSeriesTitle).not.toBe("");
+    });
 
-    const input = main(page).getByRole("combobox", { name: "Search for time series" });
-    await input.fill("Switzerland");
-    await expect(page.getByRole("listbox").first()).toBeVisible();
-    await expect(page.getByRole("option", { name: "Switzerland", exact: true })).toBeVisible();
-    await expect(page.getByRole("option", { name: /Switzerland[\s\S]*Debt securities/i })).toBeVisible();
-    await page.getByRole("option", { name: /Switzerland[\s\S]*Debt securities/i }).click();
+    await test.step("3. Search by series key and verify the identified item", async () => {
+      await searchInput(page).fill(identifiedSeriesKey);
+      await searchInput(page).press("Enter");
+      await expect(page).toHaveURL((url) =>
+        url.pathname === DATA_PATH && url.searchParams.get("q") === identifiedSeriesKey,
+      );
+      await expect(resultCount(page)).toHaveText("1 time series found");
 
-    await expect(page).toHaveURL((url) => url.searchParams.get("q") === "Switzerland");
-    await expect(main(page).getByText(/time series found/i).first()).toBeVisible();
-    await expect(main(page).getByRole("article").first()).toContainText(/Switzerland|Swiss/i);
-    await expect(main(page).getByRole("article").first()).not.toContainText(/Malta/i);
+      const result = page.getByRole("main").getByRole("article");
+      await expect(result).toHaveCount(1);
+      await expect(result).toContainText(identifiedSeriesKey);
+      await expect(result).toContainText(identifiedSeriesTitle);
+    });
 
-    await page.reload();
-    await page.waitForLoadState("domcontentloaded");
-    await expect(page).toHaveURL((url) => url.searchParams.get("q") === "Switzerland");
-    await expect(main(page).getByRole("combobox", { name: "Search for time series" })).toHaveValue("Switzerland");
+    await test.step("4. Clear the search and restore all unselected time series", async () => {
+      await page.getByRole("main").getByRole("button", { name: /clear search terms/i }).click();
+      await expect(page).toHaveURL((url) => url.pathname === DATA_PATH && !url.searchParams.has("q"));
+      await expect(searchInput(page)).toHaveValue("");
+      await expect.poll(async () => countFrom(await resultCount(page).innerText())).toBe(fullResultCount);
+      await expect(page.getByRole("main").getByRole("checkbox", { checked: true })).toHaveCount(0);
+    });
+
+    await test.step("5. Type Switzerland and verify all suggestions relate to it", async () => {
+      await searchInput(page).fill("Switzerland");
+      const suggestions = page.getByRole("option");
+      await expect(suggestions.first()).toBeVisible();
+      const suggestionTexts = await suggestions.allInnerTexts();
+      expect(suggestionTexts.length).toBeGreaterThan(0);
+      expect(suggestionTexts.every((text) => text.includes("Switzerland"))).toBe(true);
+      await expect(page.getByRole("option", { name: "Switzerland", exact: true })).toBeVisible();
+    });
+
+    await test.step("6. Select Switzerland and verify its reference-area filter and results", async () => {
+      await page.getByRole("option", { name: "Switzerland", exact: true }).click();
+      await expect(page).toHaveURL((url) => url.pathname === DATA_PATH && url.searchParams.get("q") === "Switzerland");
+      await expect(searchInput(page)).toHaveValue("Switzerland");
+      await expectVisibleResultsFrom(page, "Switzerland");
+      switzerlandResultCount = countFrom(await resultCount(page).innerText());
+      expect(switzerlandResultCount).toBeLessThan(fullResultCount);
+
+      await page.getByRole("main").getByRole("button", { name: "Filters", exact: true }).click();
+      await expect(page.getByRole("main").getByRole("button", {
+        name: /^Reference area filter collapsed/,
+      })).toContainText("Reference area: Switzerland");
+    });
+
+    await test.step("7. Reload and verify the Switzerland search state persists", async () => {
+      await page.reload();
+      await expect(page).toHaveURL((url) => url.pathname === DATA_PATH && url.searchParams.get("q") === "Switzerland");
+      await expect(searchInput(page)).toHaveValue("Switzerland");
+      await expect.poll(async () => countFrom(await resultCount(page).innerText())).toBe(switzerlandResultCount);
+      await expectVisibleResultsFrom(page, "Switzerland");
+
+      const referenceArea = page.getByRole("main").getByRole("button", {
+        name: /^Reference area filter collapsed/,
+      });
+      if (!(await referenceArea.isVisible())) {
+        await page.getByRole("main").getByRole("button", { name: "Filters", exact: true }).click();
+      }
+      await expect(referenceArea).toContainText("Reference area: Switzerland");
+    });
   });
 });

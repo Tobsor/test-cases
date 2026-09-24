@@ -1,75 +1,82 @@
-import { expect, test } from "@playwright/test";
+﻿import { expect, test } from "@playwright/test";
 
-const BASE_URL = process.env.BASE_URL ?? "https://data.bis.org";
-const BASE_ORIGIN = new URL(BASE_URL).origin;
-
-const EXPECTED_URLS = [
-  BASE_ORIGIN,
-  `${BASE_ORIGIN}/topics`,
-  `${BASE_ORIGIN}/topics/CBS`,
-  `${BASE_ORIGIN}/topics/CBS/data`,
-  `${BASE_ORIGIN}/topics/EER`,
-  `${BASE_ORIGIN}/topics/EER/data`,
-  `${BASE_ORIGIN}/release-calendar`,
-  `${BASE_ORIGIN}/help`,
-  `${BASE_ORIGIN}/help/getting-started`,
-  `${BASE_ORIGIN}/help/explore-statistics`,
-  `${BASE_ORIGIN}/help/export`,
-  `${BASE_ORIGIN}/help/tools`,
-  `${BASE_ORIGIN}/help/glossary`,
-  `${BASE_ORIGIN}/help/legal`,
-  `${BASE_ORIGIN}/help/faq`,
-  `${BASE_ORIGIN}/bulkdownload`,
+const EXPECTED_PATHS = [
+  "/",
+  "/release-calendar",
+  "/help",
+  "/help/getting-started",
+  "/help/explore-statistics",
+  "/help/export",
+  "/help/tools",
+  "/help/glossary",
+  "/help/legal",
+  "/help/faq",
+  "/bulkdownload",
 ];
 
-function pathnames(locations: string[]): string[] {
-  return locations.map((location) => new URL(location).pathname);
+function expectApproximateCount(items: string[], minimum: number, maximum: number, description: string): void {
+  expect(items.length, description).toBeGreaterThanOrEqual(minimum);
+  expect(items.length, description).toBeLessThanOrEqual(maximum);
 }
 
 test.describe("Sitemap", () => {
-  test("publishes complete environment-specific sitemap URLs", async ({ page }) => {
-    await page.goto("/sitemap.xml");
-    await page.waitForLoadState("domcontentloaded");
+  test("publishes complete environment-specific sitemap URLs", async ({ page, baseURL }) => {
+    expect(baseURL, "Playwright baseURL must identify the environment under test").toBeTruthy();
+    const origin = new URL(baseURL!).origin;
+    const escapedOrigin = origin.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const topicRoute = new RegExp(`^${escapedOrigin}/topics/[^/?#]+(?:/data|/tables-and-dashboards)?$`);
+    const tableRoute = new RegExp(`^${escapedOrigin}/topics/[^/?#]+/tables-and-dashboards/[^/?#]+$`);
+    const pdqRoute = new RegExp(`^${escapedOrigin}/topics/[^/?#]+/data/[^/?#]+$`);
+    const expectedUrls = EXPECTED_PATHS.map((path) => new URL(path, origin).href);
+    let locations: string[] = [];
 
-    const locations = await page.evaluate(() =>
-      Array.from(document.querySelectorAll("loc"), (node) => node.textContent?.trim()).filter(Boolean),
-    );
-
-    expect(locations.length, "Sitemap should include generated page URLs").toBeGreaterThan(100);
-    expect(new Set(locations).size, "Sitemap URLs should be unique").toBe(locations.length);
-
-    for (const location of locations) {
-      expect(location, "Sitemap location should be an absolute URL").toMatch(/^https:\/\//);
-      expect(new URL(location).origin, `Sitemap URL should use ${BASE_ORIGIN}`).toBe(BASE_ORIGIN);
-      expect(location, "Sitemap should not contain UAT placeholder URLs").not.toContain("dataportal.uat.bisinfo.org");
-    }
-
-    for (const expectedUrl of EXPECTED_URLS) {
-      expect(locations, `Sitemap should include ${expectedUrl}`).toContain(expectedUrl);
-    }
-
-    const paths = pathnames(locations);
-    const topicOverviewPaths = paths.filter((path) => /^\/topics\/[A-Z0-9_]+$/.test(path));
-    const topicDataPaths = paths.filter((path) => /^\/topics\/[A-Z0-9_]+\/data$/.test(path));
-    const topicTablesPaths = paths.filter((path) => /^\/topics\/[A-Z0-9_]+\/tables-and-dashboards$/.test(path));
-    const publicationTablePaths = paths.filter((path) =>
-      /^\/topics\/[A-Z0-9_]+\/tables-and-dashboards\/.+/.test(path),
-    );
-    const pdqPaths = paths.filter((path) => /^\/topics\/[A-Z0-9_]+\/data\/.+/.test(path));
-
-    expect(topicOverviewPaths, "Sitemap should include one overview URL per topic").toHaveLength(20);
-    expect(topicDataPaths, "Sitemap should include one data URL per topic").toHaveLength(20);
-    expect(topicTablesPaths, "Sitemap should include one tables & dashboards URL per topic").toHaveLength(20);
-    expect(publicationTablePaths.length, "Sitemap should include roughly 130 publication table URLs").toBeGreaterThanOrEqual(120);
-    expect(publicationTablePaths.length, "Sitemap should include roughly 130 publication table URLs").toBeLessThanOrEqual(140);
-    expect(pdqPaths.length, "Sitemap should include roughly 70 PDQ URLs").toBeGreaterThanOrEqual(65);
-    expect(pdqPaths.length, "Sitemap should include roughly 70 PDQ URLs").toBeLessThanOrEqual(80);
-
-    for (const topicPath of topicOverviewPaths) {
-      expect(paths, `Sitemap should include ${topicPath}/data`).toContain(`${topicPath}/data`);
-      expect(paths, `Sitemap should include ${topicPath}/tables-and-dashboards`).toContain(
-        `${topicPath}/tables-and-dashboards`,
+    await test.step("1. Visit /sitemap.xml", async () => {
+      const response = await page.goto("/sitemap.xml");
+      expect(response, "Sitemap navigation should return a response").not.toBeNull();
+      expect(response!.ok(), "Sitemap should load successfully").toBe(true);
+      locations = await page.evaluate(() =>
+        Array.from(document.querySelectorAll("loc"), (node) => node.textContent?.trim() ?? ""),
       );
-    }
+      expect(locations.length, "Sitemap should include generated page URLs").toBeGreaterThan(0);
+    });
+
+    await test.step("2–3. Verify complete page, topic, table, and PDQ URLs for the current environment", async () => {
+      // Parse without a base to reject relative URLs and normalize the homepage's trailing slash.
+      const urls = locations.map((location) => new URL(location).href);
+      expect(new Set(urls).size, "Sitemap URLs should be unique").toBe(urls.length);
+
+      for (const expectedUrl of expectedUrls) {
+        expect(urls, `Sitemap should include ${expectedUrl}`).toContain(expectedUrl);
+      }
+
+      const topicUrls = urls.filter((url) => topicRoute.test(url));
+      const tableUrls = urls.filter((url) => tableRoute.test(url));
+      const pdqUrls = urls.filter((url) => pdqRoute.test(url));
+
+      // Each complete URL must match a supported route on the configured domain.
+      const staticUrls = new Set([...expectedUrls, `${origin}/topics`]);
+      for (const url of urls) {
+        expect(
+          staticUrls.has(url) || topicRoute.test(url) || tableRoute.test(url) || pdqRoute.test(url),
+          `Unexpected sitemap URL: ${url}`,
+        ).toBe(true);
+      }
+
+      // The markdown gives approximate totals, allowing modest content changes.
+      expectApproximateCount(topicUrls, 54, 66, "Sitemap should contain about 60 topic routes");
+      expectApproximateCount(tableUrls, 120, 140, "Sitemap should contain about 130 table links");
+      expectApproximateCount(pdqUrls, 65, 80, "Sitemap should contain about 70 PDQ links");
+
+      // Derive IDs from every topic URL so missing overview routes are detected too.
+      const topicIds = new Set([...topicUrls, ...tableUrls, ...pdqUrls].map(
+        (url) => url.slice(`${origin}/topics/`.length).split("/")[0],
+      ));
+      for (const topicId of topicIds) {
+        for (const suffix of ["", "/tables-and-dashboards", "/data"]) {
+          const expectedUrl = `${origin}/topics/${topicId}${suffix}`;
+          expect(urls, `Sitemap should include ${expectedUrl}`).toContain(expectedUrl);
+        }
+      }
+    });
   });
 });
